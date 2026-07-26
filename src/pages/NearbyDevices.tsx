@@ -55,16 +55,19 @@ export const NearbyDevices: React.FC = () => {
     if (!targetPairCodeInput.trim()) return;
     setIsPairConnecting(true);
     const cleanCode = targetPairCodeInput.trim().toUpperCase();
-    const targetPeerId = `dev_peer_${cleanCode}`;
-    const connected = await peerService.connectToPeer(targetPeerId);
+    const success = await peerService.connectToPeer(cleanCode);
     setIsPairConnecting(false);
 
+    const targetId = cleanCode.toLowerCase().startsWith('flow-')
+      ? cleanCode.toLowerCase()
+      : `flow-${cleanCode.toLowerCase().replace(/^flow-?/, '')}`;
+
     const manualDevice: Device = {
-      id: targetPeerId,
-      name: `Device (${cleanCode})`,
+      id: targetId,
+      name: `Peer Device (${cleanCode})`,
       type: 'Desktop',
       os: 'Windows',
-      ip: 'Serverless P2P',
+      ip: 'Serverless P2P Cloud',
       signalStrength: 100,
       connectionQuality: 'Excellent',
       latency: 5,

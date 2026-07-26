@@ -121,12 +121,15 @@ export const SendFiles: React.FC = () => {
                 onChange={(e) => {
                   const val = e.target.value.trim().toUpperCase();
                   if (val.length >= 4) {
+                    const targetId = val.toLowerCase().startsWith('flow-')
+                      ? val.toLowerCase()
+                      : `flow-${val.toLowerCase().replace(/^flow-?/, '')}`;
                     const pairDevice: Device = {
-                      id: `dev_peer_${val}`,
+                      id: targetId,
                       name: `Pair Device (${val})`,
                       type: 'Desktop',
                       os: 'Windows',
-                      ip: 'Serverless P2P',
+                      ip: 'Serverless P2P Cloud',
                       signalStrength: 100,
                       connectionQuality: 'Excellent',
                       latency: 5,

@@ -1,5 +1,7 @@
 import Peer, { DataConnection } from 'peerjs';
 import { Device } from '../types';
+import transferEngine from './transferEngine';
+import { useTransferStore } from '../stores/transferStore';
 
 type DataHandler = (data: ArrayBuffer | string) => void;
 
@@ -21,12 +23,11 @@ class PeerService {
       return Promise.resolve(this.pairCode);
     }
 
-    // Clean peer ID for PeerJS
-    this.peerId = myDeviceId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    
-    // Generate a 6-digit Pair Code for easy manual entry
-    const hash = Array.from(this.peerId).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    this.pairCode = `FLOW-${((hash * 9301 + 49297) % 8999 + 1000).toString()}`;
+    // Generate a clean 4-digit numeric Pair Code
+    const hash = Array.from(myDeviceId).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const numCode = ((hash * 9301 + 49297) % 8999 + 1000).toString();
+    this.pairCode = `FLOW-${numCode}`;
+    this.peerId = `flow-${numCode.toLowerCase()}`;
 
     return new Promise((resolve) => {
       try {
@@ -55,10 +56,7 @@ class PeerService {
           resolve(this.pairCode);
         });
 
-        // Timeout fallback
-        setTimeout(() => {
-          resolve(this.pairCode);
-        }, 3000);
+        setTimeout(() => resolve(this.pairCode), 3000);
       } catch (e) {
         console.warn('[PeerJS Initialization Warning]', e);
         resolve(this.pairCode);
@@ -74,10 +72,15 @@ class PeerService {
     return this.peerId;
   }
 
-  async connectToPeer(targetPeerId: string): Promise<boolean> {
+  async connectToPeer(targetCode: string): Promise<boolean> {
     if (!this.peer || this.peer.destroyed) return false;
 
-    const cleanTargetId = targetPeerId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    let cleanTargetId = targetCode.trim().toLowerCase();
+    if (!cleanTargetId.startsWith('flow-')) {
+      cleanTargetId = cleanTargetId.replace(/^flow-?/, '');
+      cleanTargetId = `flow-${cleanTargetId}`;
+    }
+
     if (this.connections.has(cleanTargetId)) {
       const existing = this.connections.get(cleanTargetId);
       if (existing && existing.open) return true;
@@ -97,7 +100,8 @@ class PeerService {
           resolve(true);
         });
 
-        conn.on('error', () => {
+        conn.on('error', (err) => {
+          console.warn('[PeerJS Connect Failed]', err);
           clearTimeout(timeout);
           resolve(false);
         });
@@ -112,10 +116,39 @@ class PeerService {
     const peerId = conn.peer;
     this.connections.set(peerId, conn);
 
-    conn.on('data', (data) => {
+    conn.on('data', (data: any) => {
       const handlers = this.dataHandlers.get(peerId);
       if (handlers) {
-        handlers.forEach((h) => h(data as any));
+        handlers.forEach((h) => h(data));
+      }
+
+      if (typeof data === 'string') {
+        try {
+          const msg = JSON.parse(data);
+          if (msg.type === 'TRANSFER_REQUEST') {
+            const peer: Device = {
+              id: peerId,
+              name: msg.payload?.senderName || `Peer (${peerId.toUpperCase()})`,
+              type: 'Desktop',
+              os: 'Windows',
+              ip: 'Serverless P2P Cloud',
+              signalStrength: 100,
+              connectionQuality: 'Excellent',
+              latency: 5,
+              isOnline: true,
+            };
+            const session = transferEngine.handleIncomingTransferRequest(msg.payload, peer);
+            useTransferStore.getState().setIncomingModalSession(session);
+          } else if (msg.type === 'TRANSFER_RESPONSE') {
+            if (msg.payload?.accepted) {
+              transferEngine.executeSendLoop();
+            } else {
+              transferEngine.cancel();
+            }
+          }
+        } catch (e) {}
+      } else if (data instanceof ArrayBuffer) {
+        transferEngine.processIncomingPacket(data);
       }
     });
 
@@ -129,7 +162,12 @@ class PeerService {
   }
 
   sendData(targetPeerId: string, data: ArrayBuffer | string): boolean {
-    const cleanTargetId = targetPeerId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    let cleanTargetId = targetPeerId.trim().toLowerCase();
+    if (!cleanTargetId.startsWith('flow-')) {
+      cleanTargetId = cleanTargetId.replace(/^flow-?/, '');
+      cleanTargetId = `flow-${cleanTargetId}`;
+    }
+
     const conn = this.connections.get(cleanTargetId);
     if (conn && conn.open) {
       conn.send(data);

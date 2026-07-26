@@ -1,5 +1,6 @@
 import webRTCService from './webRTCService';
 import webSocketService from './webSocketService';
+import peerService from './peerService';
 import encryptionService from './encryptionService';
 import storageService from './storageService';
 import historyService from './historyService';
@@ -113,12 +114,27 @@ export class TransferEngine {
 
     const myDeviceName = useSettingsStore.getState().deviceName || 'FlowShare Peer';
 
-    // Send transfer request via WebSocket signaling
-    webSocketService.send('TRANSFER_REQUEST', {
+    // Send transfer request via WebSocket signaling & PeerJS fallback
+    const sentWs = webSocketService.send('TRANSFER_REQUEST', {
       files: files.map(f => ({ id: f.id, name: f.name, size: f.size, type: f.type })),
       senderName: myDeviceName,
       senderDevice: myDeviceName,
     }, peerDevice.id);
+
+    if (!sentWs) {
+      peerService.sendData(peerDevice.id, JSON.stringify({
+        type: 'TRANSFER_REQUEST',
+        payload: {
+          sessionId: session.id,
+          files: files.map(f => ({ id: f.id, name: f.name, size: f.size, type: f.type })),
+          senderName: myDeviceName,
+          senderDevice: myDeviceName,
+          totalBytes,
+          totalFiles: files.length,
+          estimatedTimeSec: Math.ceil(totalBytes / (15 * 1024 * 1024)),
+        }
+      }));
+    }
 
     return session;
   }
@@ -349,7 +365,7 @@ export class TransferEngine {
     });
   }
 
-  private async processIncomingPacket(data: ArrayBuffer | string) {
+  public async processIncomingPacket(data: ArrayBuffer | string) {
     if (!this.activeSession) return;
 
     if (typeof data === 'string') {
@@ -546,9 +562,12 @@ export class TransferEngine {
     if (this.speedTimer) clearInterval(this.speedTimer);
   }
 
-  private sendRawOrFallback(peerId: string, data: string) {
-    const sent = webRTCService.sendData(peerId, data);
+  private sendRawOrFallback(peerId: string, data: string | ArrayBuffer) {
+    let sent = webRTCService.sendData(peerId, data);
     if (!sent) {
+      sent = peerService.sendData(peerId, data);
+    }
+    if (!sent && typeof data === 'string') {
       webSocketService.send('FALLBACK_FILE_CHUNK', { meta: data, chunkBase64: '' }, peerId);
     }
   }
