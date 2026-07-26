@@ -48,7 +48,9 @@ export const IncomingTransferModal: React.FC = () => {
               <Download className="w-6 h-6 animate-bounce" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white">Incoming File Transfer</h3>
+              <h3 className="text-lg font-bold text-white">
+                <span className="text-indigo-400 font-extrabold">{incomingModalSession.peerDevice.name}</span> wants to send
+              </h3>
               <p className="text-xs text-gray-400">Direct peer-to-peer connection request</p>
             </div>
           </div>

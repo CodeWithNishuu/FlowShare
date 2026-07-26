@@ -128,62 +128,62 @@ export const Settings: React.FC = () => {
         </div>
 
         {/* Appearance & Themes */}
-        <div className="bg-gray-900/80 backdrop-blur-md p-6 rounded-3xl border border-gray-800 space-y-4">
+        <div className="bg-gray-900/80 backdrop-blur-md p-4 sm:p-6 rounded-3xl border border-gray-800 space-y-4">
           <h3 className="text-base font-bold text-white flex items-center space-x-2">
             <Palette className="w-5 h-5 text-cyan-400" />
             <span>Theme & Accent Color</span>
           </h3>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
             <button
               type="button"
               onClick={() => setTheme('dark')}
-              className={`flex items-center justify-center space-x-2 p-3.5 rounded-2xl border transition-all ${
+              className={`flex items-center justify-center space-x-2 min-h-[44px] p-3 rounded-2xl border transition-all ${
                 theme === 'dark'
                   ? 'bg-indigo-600/20 border-indigo-500 text-white font-bold'
                   : 'bg-gray-800/40 border-gray-700/50 text-gray-400 hover:text-white'
               }`}
             >
               <Moon className="w-4 h-4 text-indigo-400" />
-              <span>Dark Mode</span>
+              <span className="text-xs sm:text-sm">Dark Mode</span>
             </button>
 
             <button
               type="button"
               onClick={() => setTheme('light')}
-              className={`flex items-center justify-center space-x-2 p-3.5 rounded-2xl border transition-all ${
+              className={`flex items-center justify-center space-x-2 min-h-[44px] p-3 rounded-2xl border transition-all ${
                 theme === 'light'
                   ? 'bg-indigo-600/20 border-indigo-500 text-white font-bold'
                   : 'bg-gray-800/40 border-gray-700/50 text-gray-400 hover:text-white'
               }`}
             >
               <Sun className="w-4 h-4 text-amber-400" />
-              <span>Light Mode</span>
+              <span className="text-xs sm:text-sm">Light Mode</span>
             </button>
 
             <button
               type="button"
               onClick={() => setTheme('system')}
-              className={`flex items-center justify-center space-x-2 p-3.5 rounded-2xl border transition-all ${
+              className={`flex items-center justify-center space-x-2 min-h-[44px] p-3 rounded-2xl border transition-all ${
                 theme === 'system'
                   ? 'bg-indigo-600/20 border-indigo-500 text-white font-bold'
                   : 'bg-gray-800/40 border-gray-700/50 text-gray-400 hover:text-white'
               }`}
             >
               <Laptop className="w-4 h-4 text-cyan-400" />
-              <span>System</span>
+              <span className="text-xs sm:text-sm">System</span>
             </button>
           </div>
 
           <div>
             <label className="text-xs font-semibold text-gray-400 block mb-2">Accent Palette</label>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-wrap items-center gap-3">
               {accentColors.map((color) => (
                 <button
                   key={color.hex}
                   type="button"
                   onClick={() => setAccentColor(color.hex)}
-                  className={`w-9 h-9 rounded-full transition-transform flex items-center justify-center ${
+                  className={`w-9 h-9 rounded-full transition-transform flex items-center justify-center min-h-[36px] min-w-[36px] ${
                     accentColor === color.hex ? 'scale-110 ring-4 ring-white/20' : 'hover:scale-105'
                   }`}
                   style={{ backgroundColor: color.hex }}
@@ -196,14 +196,31 @@ export const Settings: React.FC = () => {
         </div>
 
         {/* Security & Network Preferences */}
-        <div className="bg-gray-900/80 backdrop-blur-md p-6 rounded-3xl border border-gray-800 space-y-4">
+        <div className="bg-gray-900/80 backdrop-blur-md p-4 sm:p-6 rounded-3xl border border-gray-800 space-y-4">
           <h3 className="text-base font-bold text-white flex items-center space-x-2">
             <ShieldCheck className="w-5 h-5 text-emerald-400" />
             <span>Security & Network Preferences</span>
           </h3>
 
           <div className="space-y-3 divide-y divide-gray-800/60 text-xs">
+            {/* Visibility to Others */}
             <div className="flex items-center justify-between pt-2">
+              <div>
+                <p className="font-semibold text-white">Visible to Others on LAN</p>
+                <p className="text-gray-400">Control who can discover this device on the local network</p>
+              </div>
+              <select
+                value={settings.visibility || 'everyone'}
+                onChange={(e) => settings.update({ visibility: e.target.value as any })}
+                className="bg-gray-800 text-gray-200 px-3 py-1.5 rounded-xl border border-gray-700 focus:outline-none text-xs"
+              >
+                <option value="everyone">Everyone</option>
+                <option value="contacts">Trusted Contacts Only</option>
+                <option value="hidden">Hidden</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between pt-3">
               <div>
                 <p className="font-semibold text-white">ECDH + AES-256-GCM Encryption</p>
                 <p className="text-gray-400">Encrypt file chunks before streaming over WebRTC</p>
@@ -211,7 +228,7 @@ export const Settings: React.FC = () => {
               <button
                 type="button"
                 onClick={() => settings.update({ encryptionEnabled: !settings.encryptionEnabled })}
-                className={`w-12 h-6 rounded-full transition-colors relative ${
+                className={`w-12 h-6 rounded-full transition-colors relative flex-shrink-0 ${
                   settings.encryptionEnabled ? 'bg-indigo-600' : 'bg-gray-700'
                 }`}
               >
@@ -231,7 +248,7 @@ export const Settings: React.FC = () => {
               <button
                 type="button"
                 onClick={() => settings.update({ autoAcceptTrusted: !settings.autoAcceptTrusted })}
-                className={`w-12 h-6 rounded-full transition-colors relative ${
+                className={`w-12 h-6 rounded-full transition-colors relative flex-shrink-0 ${
                   settings.autoAcceptTrusted ? 'bg-indigo-600' : 'bg-gray-700'
                 }`}
               >
@@ -251,7 +268,7 @@ export const Settings: React.FC = () => {
               <button
                 type="button"
                 onClick={() => settings.update({ notifications: !settings.notifications })}
-                className={`w-12 h-6 rounded-full transition-colors relative ${
+                className={`w-12 h-6 rounded-full transition-colors relative flex-shrink-0 ${
                   settings.notifications ? 'bg-indigo-600' : 'bg-gray-700'
                 }`}
               >

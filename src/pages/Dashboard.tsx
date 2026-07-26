@@ -54,33 +54,33 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="space-y-8">
       {/* Top Banner & Quick Actions */}
-      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-gradient-to-r from-indigo-900/40 via-gray-900 to-cyan-900/30 p-6 rounded-3xl border border-gray-800 shadow-xl">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-gradient-to-r from-indigo-900/40 via-gray-900 to-cyan-900/30 p-4 sm:p-6 rounded-3xl border border-gray-800 shadow-xl">
         <div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">FlowShare Dashboard</h1>
-          <p className="text-sm text-gray-400 mt-1">
+          <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">FlowShare Dashboard</h1>
+          <p className="text-xs sm:text-sm text-gray-400 mt-1">
             Wireless LAN file sharing active • {onlineDevicesCount} peer device{onlineDevicesCount !== 1 ? 's' : ''} online
           </p>
         </div>
 
         {/* Quick Actions */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 w-full lg:w-auto">
           <button
             onClick={() => navigate('/send')}
-            className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 transition-all"
+            className="flex-1 sm:flex-none flex items-center justify-center space-x-2 min-h-[44px] px-4 sm:px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition-all"
           >
             <Send className="w-4 h-4" />
             <span>Send Files</span>
           </button>
           <button
             onClick={() => navigate('/nearby')}
-            className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-bold text-sm transition-all"
+            className="flex-1 sm:flex-none flex items-center justify-center space-x-2 min-h-[44px] px-4 sm:px-5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-bold text-xs sm:text-sm transition-all"
           >
             <Radio className="w-4 h-4 text-cyan-400" />
             <span>Discover Peers</span>
           </button>
           <button
             onClick={() => navigate('/history')}
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 text-sm font-medium transition-all"
+            className="flex-1 sm:flex-none flex items-center justify-center space-x-2 min-h-[44px] px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 text-xs sm:text-sm font-medium transition-all"
           >
             <History className="w-4 h-4" />
             <span>History</span>

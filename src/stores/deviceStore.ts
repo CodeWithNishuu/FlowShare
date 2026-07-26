@@ -15,11 +15,25 @@ interface DeviceState {
   toggleDeviceTrust: (deviceId: string) => void;
 }
 
-const { browser, os, deviceType } = detectBrowserAndOS();
-const randomId = Math.floor(1000 + Math.random() * 9000);
+function getOrCreateDeviceId(): string {
+  const { browser } = detectBrowserAndOS();
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      let storedId = sessionStorage.getItem('flowshare_device_id');
+      if (!storedId) {
+        const randomId = Math.floor(1000 + Math.random() * 9000);
+        storedId = `dev_${browser.toLowerCase()}_${randomId}`;
+        sessionStorage.setItem('flowshare_device_id', storedId);
+      }
+      return storedId;
+    }
+  } catch (e) {}
+  const randomId = Math.floor(1000 + Math.random() * 9000);
+  return `dev_${browser.toLowerCase()}_${randomId}`;
+}
 
 export const useDeviceStore = create<DeviceState>((set) => ({
-  myDeviceId: `dev_${browser.toLowerCase()}_${randomId}`,
+  myDeviceId: getOrCreateDeviceId(),
   devices: [], // Zero mock/fake devices
   selectedDevice: null,
   isScanning: true,

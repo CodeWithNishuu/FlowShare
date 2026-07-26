@@ -7,6 +7,8 @@ import { useNearbyDevices } from '../../hooks/useNearbyDevices';
 import { useTransfer } from '../../hooks/useTransfer';
 
 export const Layout: React.FC = () => {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+
   // Initialize global discovery and signaling socket
   useNearbyDevices();
   useTransfer();
@@ -14,12 +16,12 @@ export const Layout: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 flex overflow-x-hidden">
       {/* Sidebar Navigation */}
-      <Sidebar />
+      <Sidebar isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <Header />
-        <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto">
+        <Header onToggleMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)} />
+        <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl w-full mx-auto">
           <Outlet />
         </main>
       </div>

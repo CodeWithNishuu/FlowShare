@@ -10,10 +10,16 @@ import {
   Settings,
   Share2,
   ShieldAlert,
+  X,
 } from 'lucide-react';
 import { useTransferStore } from '../../stores/transferStore';
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => {
   const { activeSession } = useTransferStore();
   const isTransferActive = activeSession && activeSession.status === 'transferring';
 
@@ -32,21 +38,33 @@ export const Sidebar: React.FC = () => {
     { label: 'Settings', path: '/settings', icon: Settings },
   ];
 
-  return (
-    <aside className="w-64 bg-gray-900/90 backdrop-blur-xl border-r border-gray-800 flex flex-col justify-between p-4 h-screen sticky top-0 z-30">
+  const sidebarContent = (
+    <div className="flex flex-col justify-between h-full p-4">
       <div className="space-y-6">
-        {/* Brand Header */}
-        <NavLink to="/" className="flex items-center space-x-3 px-3 py-2 group">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform">
-            <Share2 className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-extrabold text-white tracking-tight">
-              Flow<span className="text-cyan-400">Share</span>
-            </h1>
-            <p className="text-[10px] text-gray-400 font-medium tracking-wide uppercase">P2P File Transfer</p>
-          </div>
-        </NavLink>
+        {/* Brand Header & Mobile Close Button */}
+        <div className="flex items-center justify-between">
+          <NavLink to="/" onClick={onClose} className="flex items-center space-x-3 px-3 py-2 group">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform">
+              <Share2 className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-extrabold text-white tracking-tight">
+                Flow<span className="text-cyan-400">Share</span>
+              </h1>
+              <p className="text-[10px] text-gray-400 font-medium tracking-wide uppercase">P2P File Transfer</p>
+            </div>
+          </NavLink>
+
+          {/* Close button on mobile */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="lg:hidden p-2 rounded-xl text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          )}
+        </div>
 
         {/* Navigation Items */}
         <nav className="space-y-1">
@@ -56,6 +74,7 @@ export const Sidebar: React.FC = () => {
               <NavLink
                 key={item.path}
                 to={item.path}
+                onClick={onClose}
                 className={({ isActive }) =>
                   `flex items-center justify-between px-3.5 py-3 rounded-xl font-medium text-sm transition-all duration-200 ${
                     isActive
@@ -94,6 +113,31 @@ export const Sidebar: React.FC = () => {
           <span>AES-256 Encrypted</span>
         </div>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Sticky Sidebar (lg+) */}
+      <aside className="hidden lg:flex w-64 bg-gray-900/90 backdrop-blur-xl border-r border-gray-800 flex-col justify-between h-screen sticky top-0 z-30 flex-shrink-0">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile Slide-Over Drawer (< lg) */}
+      {isOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          {/* Backdrop Overlay */}
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
+            onClick={onClose}
+          />
+
+          {/* Drawer Container */}
+          <aside className="fixed inset-y-0 left-0 w-72 max-w-[80vw] bg-gray-900 border-r border-gray-800 shadow-2xl z-50 flex flex-col justify-between">
+            {sidebarContent}
+          </aside>
+        </div>
+      )}
+    </>
   );
 };

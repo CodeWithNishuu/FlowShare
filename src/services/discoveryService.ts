@@ -3,7 +3,18 @@ import { Device } from '../types';
 
 /**
  * Discovery Service for FlowShare
- * Discovers nearby LAN devices via WebSocket signaling & MDNS/subnet broadcasting.
+ * 
+ * IMPORTANT ARCHITECTURAL NOTE:
+ * Automatic LAN discovery via UDP/mDNS is NOT possible directly inside standard browser environments
+ * due to security sandbox restrictions on raw socket APIs.
+ * 
+ * Current web implementation relies on WebSocket Signaling Server device registry.
+ * Devices connected to the same signaling server appear in real-time.
+ * 
+ * A future native desktop version (e.g., using Tauri or Electron) should implement:
+ * - UDP Broadcast
+ * - mDNS (Multicast DNS)
+ * - Automatic Native LAN Discovery
  */
 class DiscoveryService {
   private isScanning = false;

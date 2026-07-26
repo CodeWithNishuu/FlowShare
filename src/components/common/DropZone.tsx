@@ -81,28 +81,28 @@ export const DropZone: React.FC<DropZoneProps> = ({
         }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
-        className={`relative border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center transition-all duration-300 ${
+        className={`relative border-2 border-dashed rounded-2xl p-4 sm:p-8 flex flex-col items-center justify-center transition-all duration-300 ${
           isDragOver
             ? 'border-indigo-500 bg-indigo-500/10 scale-[1.01]'
             : 'border-gray-700/70 hover:border-gray-500 bg-gray-900/40'
         }`}
       >
-        <div className="w-16 h-16 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center mb-4 ring-8 ring-indigo-500/10">
-          <UploadCloud className="w-8 h-8 animate-pulse" />
+        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center mb-3 sm:mb-4 ring-4 sm:ring-8 ring-indigo-500/10">
+          <UploadCloud className="w-6 h-6 sm:w-8 sm:h-8 animate-pulse" />
         </div>
 
-        <h3 className="text-lg font-bold text-white mb-1">
+        <h3 className="text-base sm:text-lg font-bold text-white mb-1 text-center">
           Drag & Drop Files or Folders Here
         </h3>
-        <p className="text-sm text-gray-400 mb-6 text-center max-w-md">
+        <p className="text-xs sm:text-sm text-gray-400 mb-4 sm:mb-6 text-center max-w-md">
           Unlimited file size. Supports single files, multiple selections, or full folders directly over Wi-Fi.
         </p>
 
-        <div className="flex flex-wrap items-center justify-center gap-3">
+        <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-2.5 sm:gap-3 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all shadow-lg shadow-indigo-600/30"
+            className="w-full sm:w-auto flex items-center justify-center space-x-2 min-h-[44px] px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs sm:text-sm transition-all shadow-lg shadow-indigo-600/30"
           >
             <FilePlus className="w-4 h-4" />
             <span>Browse Files</span>
@@ -110,7 +110,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
           <button
             type="button"
             onClick={() => folderInputRef.current?.click()}
-            className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium text-sm border border-gray-700 transition-all"
+            className="w-full sm:w-auto flex items-center justify-center space-x-2 min-h-[44px] px-5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium text-xs sm:text-sm border border-gray-700 transition-all"
           >
             <FolderPlus className="w-4 h-4 text-cyan-400" />
             <span>Browse Folder</span>
