@@ -1,4 +1,5 @@
 import { Device, SignalingPayload } from '../types';
+import { useSettingsStore } from '../stores/settingsStore';
 
 type MessageHandler = (data: any) => void;
 
@@ -22,10 +23,15 @@ export class WebSocketService {
       return Promise.resolve(true);
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname || 'localhost';
-    const port = '4000';
-    this.serverUrl = `${protocol}//${host}:${port}`;
+    const customUrl = (useSettingsStore.getState() as any)?.signalingServerUrl || (import.meta.env.VITE_SIGNAL_SERVER_URL as string);
+    if (customUrl && customUrl.trim() !== '') {
+      this.serverUrl = customUrl.trim();
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.hostname || 'localhost';
+      const port = '4000';
+      this.serverUrl = `${protocol}//${host}:${port}`;
+    }
 
     return new Promise((resolve) => {
       try {

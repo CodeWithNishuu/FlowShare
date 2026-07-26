@@ -23,6 +23,7 @@ const defaultSettings: Settings = {
   bandwidthLimitMbps: 0,
   transferLimitGb: 0,
   autoSaveToDownloads: true,
+  signalingServerUrl: '',
 };
 
 export const useSettingsStore = create<SettingsState>()(

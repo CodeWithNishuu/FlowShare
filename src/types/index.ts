@@ -114,6 +114,7 @@ export interface Settings {
   bandwidthLimitMbps: number; // 0 for unlimited
   transferLimitGb: number; // 0 for unlimited
   autoSaveToDownloads: boolean;
+  signalingServerUrl?: string;
 }
 
 export interface NetworkStats {

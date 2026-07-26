@@ -72,9 +72,9 @@ export const SendFiles: React.FC = () => {
 
             <div className="space-y-2.5 max-h-72 overflow-y-auto custom-scrollbar pr-1">
               {devices.length === 0 ? (
-                <div className="p-4 rounded-xl bg-gray-800/40 border border-gray-700/50 text-center">
+                <div className="p-4 rounded-xl bg-gray-800/40 border border-gray-700/50 text-center space-y-2">
                   <p className="text-xs text-gray-400">
-                    No nearby devices detected. Open FlowShare on another browser or device on the same Wi-Fi.
+                    No nearby devices auto-detected. Open FlowShare on another device and enter its Pair Code below:
                   </p>
                 </div>
               ) : (
@@ -108,6 +108,35 @@ export const SendFiles: React.FC = () => {
                   </div>
                 ))
               )}
+            </div>
+
+            {/* Manual Pair Code Option */}
+            <div className="pt-2 border-t border-gray-800/80">
+              <label className="text-[11px] font-semibold text-gray-400 block mb-1">
+                Or Send to Pair Code (Vercel Serverless):
+              </label>
+              <input
+                type="text"
+                placeholder="Enter Pair Code (e.g. FLOW-8492)"
+                onChange={(e) => {
+                  const val = e.target.value.trim().toUpperCase();
+                  if (val.length >= 4) {
+                    const pairDevice: Device = {
+                      id: `dev_peer_${val}`,
+                      name: `Pair Device (${val})`,
+                      type: 'Desktop',
+                      os: 'Windows',
+                      ip: 'Serverless P2P',
+                      signalStrength: 100,
+                      connectionQuality: 'Excellent',
+                      latency: 5,
+                      isOnline: true,
+                    };
+                    setSelectedTargetDevice(pairDevice);
+                  }
+                }}
+                className="w-full bg-gray-800 text-white px-3 py-2 rounded-xl text-xs border border-gray-700 font-mono focus:outline-none uppercase"
+              />
             </div>
 
             {/* Security Note */}

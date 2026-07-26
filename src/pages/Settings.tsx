@@ -308,6 +308,24 @@ export const Settings: React.FC = () => {
               )}
             </div>
 
+            <div>
+              <label className="text-xs font-semibold text-gray-400 block mb-1.5">
+                Custom Signaling Server URL (Optional for Vercel/Cloud deployment)
+              </label>
+              <input
+                type="text"
+                value={settings.signalingServerUrl || ''}
+                onChange={(e) => {
+                  settings.update({ signalingServerUrl: e.target.value });
+                }}
+                placeholder="e.g. wss://your-signaling-server.onrender.com or ws://192.168.1.5:4000"
+                className="w-full bg-gray-800 text-white px-4 py-2.5 rounded-xl text-sm border border-gray-700 focus:outline-none font-mono"
+              />
+              <p className="text-[11px] text-gray-500 mt-1">
+                If deployed on Vercel, enter your laptop local IP (e.g. ws://192.168.x.x:4000) or public WSS server URL to discover devices.
+              </p>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-gray-400 block mb-1.5">
