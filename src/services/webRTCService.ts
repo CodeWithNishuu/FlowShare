@@ -1,4 +1,5 @@
 import webSocketService from './webSocketService';
+import cloudDiscoveryService from './cloudDiscoveryService';
 import encryptionService from './encryptionService';
 
 type DataChannelHandler = (data: ArrayBuffer | string) => void;
@@ -16,6 +17,7 @@ export class WebRTCService {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
     ],
   };
 
@@ -36,8 +38,14 @@ export class WebRTCService {
     });
   }
 
+  private sendSignaling(targetPeerId: string, type: string, payload: any) {
+    webSocketService.send(type, payload, targetPeerId);
+    cloudDiscoveryService.sendToPeer(targetPeerId, type, payload);
+  }
+
   async connectToPeer(myDeviceId: string, targetPeerId: string): Promise<boolean> {
     try {
+      console.log(`[FlowShare WebRTC] Initiating P2P RTCPeerConnection to ${targetPeerId}`);
       const pc = this.createPeerConnection(myDeviceId, targetPeerId);
       const dc = pc.createDataChannel('fileTransferChannel', {
         ordered: true,
@@ -48,35 +56,42 @@ export class WebRTCService {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Exchange ECDH Public Key
       const pubKey = await encryptionService.generateKeyPair();
 
-      webSocketService.send('WEBRTC_OFFER', {
+      this.sendSignaling(targetPeerId, 'WEBRTC_OFFER', {
         sdp: offer,
         publicKey: pubKey,
-      }, targetPeerId);
+      });
 
       return true;
     } catch (err) {
-      console.error('Failed to initiate WebRTC peer connection:', err);
+      console.error('[FlowShare WebRTC Error] Failed to initiate peer connection:', err);
       return false;
     }
   }
 
   private createPeerConnection(myDeviceId: string, targetPeerId: string): RTCPeerConnection {
     if (this.peerConnections.has(targetPeerId)) {
-      this.peerConnections.get(targetPeerId)!.close();
+      try {
+        this.peerConnections.get(targetPeerId)!.close();
+      } catch (e) {}
     }
 
     const pc = new RTCPeerConnection(this.iceServers);
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        webSocketService.send('WEBRTC_ICE_CANDIDATE', event.candidate, targetPeerId);
+        console.log(`[FlowShare WebRTC] ICE Candidate gathered for ${targetPeerId}`);
+        this.sendSignaling(targetPeerId, 'WEBRTC_ICE_CANDIDATE', event.candidate);
       }
     };
 
+    pc.onconnectionstatechange = () => {
+      console.log(`[FlowShare WebRTC] Connection State with ${targetPeerId}: ${pc.connectionState}`);
+    };
+
     pc.ondatachannel = (event) => {
+      console.log(`[FlowShare WebRTC] Received remote RTCDataChannel from ${targetPeerId}`);
       this.setupDataChannel(targetPeerId, event.channel);
     };
 
@@ -84,7 +99,8 @@ export class WebRTCService {
     return pc;
   }
 
-  private async handleOffer(myDeviceId: string, senderId: string, payload: any) {
+  public async handleOffer(myDeviceId: string, senderId: string, payload: any) {
+    console.log(`[FlowShare WebRTC] Handling SDP Offer from ${senderId}`);
     const pc = this.createPeerConnection(myDeviceId, senderId);
     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
 
@@ -97,15 +113,16 @@ export class WebRTCService {
 
     const myPubKey = await encryptionService.generateKeyPair();
 
-    webSocketService.send('WEBRTC_ANSWER', {
+    this.sendSignaling(senderId, 'WEBRTC_ANSWER', {
       sdp: answer,
       publicKey: myPubKey,
-    }, senderId);
+    });
   }
 
-  private async handleAnswer(senderId: string, payload: any) {
+  public async handleAnswer(senderId: string, payload: any) {
+    console.log(`[FlowShare WebRTC] Handling SDP Answer from ${senderId}`);
     const pc = this.peerConnections.get(senderId);
-    if (pc) {
+    if (pc && pc.signalingState !== 'closed') {
       await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
       if (payload.publicKey) {
         await encryptionService.deriveSharedKey(senderId, payload.publicKey);
@@ -113,13 +130,13 @@ export class WebRTCService {
     }
   }
 
-  private async handleIceCandidate(senderId: string, candidatePayload: any) {
+  public async handleIceCandidate(senderId: string, candidatePayload: any) {
     const pc = this.peerConnections.get(senderId);
-    if (pc && pc.remoteDescription) {
+    if (pc && pc.remoteDescription && pc.signalingState !== 'closed') {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(candidatePayload));
       } catch (e) {
-        console.warn('ICE candidate error:', e);
+        console.warn('[FlowShare WebRTC] ICE candidate error:', e);
       }
     }
   }

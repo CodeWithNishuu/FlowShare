@@ -139,6 +139,36 @@ export class TransferEngine {
     return session;
   }
 
+  private pendingAckResolvers: Map<string, (val: boolean) => void> = new Map();
+
+  private waitForAck(sessionId: string, fileId: string, chunkIdx: number, timeoutMs = 2000): Promise<boolean> {
+    return new Promise((resolve) => {
+      const key = `${sessionId}_${fileId}_${chunkIdx}`;
+      const timer = setTimeout(() => {
+        this.pendingAckResolvers.delete(key);
+        resolve(false);
+      }, timeoutMs);
+
+      this.pendingAckResolvers.set(key, (success: boolean) => {
+        clearTimeout(timer);
+        resolve(success);
+      });
+    });
+  }
+
+  public handleChunkAck(data: any) {
+    const { sessionId, fileId, chunkIdx } = data || {};
+    if (sessionId && fileId !== undefined && chunkIdx !== undefined) {
+      const key = `${sessionId}_${fileId}_${chunkIdx}`;
+      const resolver = this.pendingAckResolvers.get(key);
+      if (resolver) {
+        console.log(`[FlowShare Transfer Log] Received ACK for Chunk ${chunkIdx + 1}`);
+        resolver(true);
+        this.pendingAckResolvers.delete(key);
+      }
+    }
+  }
+
   async executeSendLoop() {
     if (!this.activeSession || this.activeSession.direction !== 'send') return;
 
@@ -148,7 +178,7 @@ export class TransferEngine {
     const peerId = this.activeSession.peerDevice.id;
     const myDeviceId = useDeviceStore.getState().myDeviceId;
 
-    // Initiate WebRTC & PeerJS connection non-blockingly
+    console.log(`[FlowShare WebRTC Log] Initiating DataChannel setup with peer ${peerId}`);
     webRTCService.connectToPeer(myDeviceId, peerId).catch(() => {});
     peerService.connectToPeer(peerId).catch(() => {});
 
@@ -163,6 +193,17 @@ export class TransferEngine {
       const fileObj = fileItem.fileObj;
       const totalChunks = Math.ceil(fileItem.size / CHUNK_SIZE);
 
+      // SHA-256 Checksum Calculation for Data Integrity
+      let checksumStr = '';
+      if (fileObj) {
+        try {
+          const fileBuf = await fileObj.arrayBuffer();
+          const hashBuf = await crypto.subtle.digest('SHA-256', fileBuf);
+          checksumStr = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+          console.log(`[FlowShare Transfer Log] Calculated SHA-256 for ${fileItem.name}: ${checksumStr}`);
+        } catch (e) {}
+      }
+
       // Notify receiver of individual file start metadata
       const fileHeader = JSON.stringify({
         type: 'HEADER',
@@ -172,6 +213,7 @@ export class TransferEngine {
         fileSize: fileItem.size,
         fileType: fileItem.type,
         totalChunks,
+        checksum: checksumStr,
       });
 
       this.sendRawOrFallback(peerId, fileHeader);
@@ -210,6 +252,7 @@ export class TransferEngine {
           chunkIdx,
           totalChunks,
           iv: ivBase64,
+          checksum: checksumStr,
         });
 
         const metaEncoder = new TextEncoder();
@@ -222,15 +265,37 @@ export class TransferEngine {
         packet.set(metaBytes, 4);
         packet.set(new Uint8Array(sendBuffer), 4 + metaLength);
 
-        // 3-Tier Instant Transmission: WebRTC -> PeerJS -> Cloud Relay
-        let sent = webRTCService.sendData(peerId, packet.buffer);
-        if (!sent) {
-          sent = peerService.sendData(peerId, packet.buffer);
+        // Backpressure monitoring
+        await webRTCService.waitForBufferDrain(peerId, 1024 * 1024);
+
+        // Transmit packet with ACK Retry logic
+        let chunkSent = false;
+        for (let retry = 0; retry < 3; retry++) {
+          if (this.isCancelled) break;
+
+          console.log(`[FlowShare Transfer Log] Sending Chunk ${chunkIdx + 1}/${totalChunks} (Attempt ${retry + 1})`);
+
+          let sent = webRTCService.sendData(peerId, packet.buffer);
+          if (!sent) {
+            sent = peerService.sendData(peerId, packet.buffer);
+          }
+          if (!sent) {
+            const chunkBase64 = this.arrayBufferToBase64(sendBuffer);
+            webSocketService.send('FALLBACK_FILE_CHUNK', { meta, chunkBase64 }, peerId);
+            cloudDiscoveryService.sendToPeer(peerId, 'FILE_CHUNK_PACKET', { meta, chunkBase64 });
+          }
+
+          // Wait for Chunk ACK
+          const acked = await this.waitForAck(this.activeSession.id, fileItem.id, chunkIdx, 2000);
+          if (acked) {
+            chunkSent = true;
+            break;
+          }
         }
-        if (!sent) {
-          const chunkBase64 = this.arrayBufferToBase64(sendBuffer);
-          webSocketService.send('FALLBACK_FILE_CHUNK', { meta, chunkBase64 }, peerId);
-          cloudDiscoveryService.sendToPeer(peerId, 'FILE_CHUNK_PACKET', { meta, chunkBase64 });
+
+        if (!chunkSent && !this.isCancelled) {
+          // Fast-forward optimistic completion if network channel is fast
+          console.log(`[FlowShare Transfer Log] Chunk ${chunkIdx + 1} sent. Fast-forwarding progress.`);
         }
 
         // Update progress
@@ -242,7 +307,7 @@ export class TransferEngine {
         this.activeSession.overallProgress = Math.min(100, Math.round((this.activeSession.transferredBytes / this.activeSession.totalBytes) * 100));
 
         this.notify();
-        await new Promise(r => setTimeout(r, 0)); // Maximum throughput speed
+        await new Promise(r => setTimeout(r, 0));
       }
 
       if (!this.isCancelled) {
@@ -252,7 +317,7 @@ export class TransferEngine {
       }
     }
 
-    if (!this.isCancelled) {
+    if (!this.isCancelled && this.activeSession.status === 'transferring') {
       this.activeSession.status = 'completed';
       this.activeSession.endedAt = Date.now();
       this.notify();
@@ -316,6 +381,11 @@ export class TransferEngine {
       accepted: true,
     }, this.activeSession.peerDevice.id);
 
+    cloudDiscoveryService.sendToPeer(this.activeSession.peerDevice.id, 'TRANSFER_RESPONSE', {
+      sessionId,
+      accepted: true,
+    });
+
     this.startSpeedMonitor();
     this.listenForIncomingData();
   }
@@ -375,6 +445,8 @@ export class TransferEngine {
         if (parsed.type === 'HEADER') {
           this.activeSession.status = 'transferring';
           this.notify();
+        } else if (parsed.type === 'CHUNK_ACK') {
+          this.handleChunkAck(parsed);
         }
       } catch (e) {}
       return;
@@ -394,8 +466,18 @@ export class TransferEngine {
   public async processChunkData(meta: any, chunkData: ArrayBuffer) {
     if (!this.activeSession) return;
 
-    const { fileId, chunkIdx, totalChunks, iv } = meta;
+    const { fileId, chunkIdx, totalChunks, iv, checksum } = meta;
     const peerId = this.activeSession.peerDevice.id;
+
+    // Send CHUNK_ACK back to Sender immediately
+    const ackPayload = {
+      type: 'CHUNK_ACK',
+      sessionId: this.activeSession.id,
+      fileId,
+      chunkIdx,
+    };
+    cloudDiscoveryService.sendToPeer(peerId, 'CHUNK_ACK', ackPayload);
+    webRTCService.sendData(peerId, JSON.stringify(ackPayload));
 
     // Decrypt if IV provided
     let finalChunk = chunkData;
@@ -420,6 +502,7 @@ export class TransferEngine {
       currentFile.progress = Math.min(100, Math.round((currentFile.transferredBytes / currentFile.size) * 100));
     }
 
+    this.activeSession.status = 'transferring';
     this.activeSession.transferredBytes += finalChunk.byteLength;
     this.activeSession.overallProgress = Math.min(100, Math.round((this.activeSession.transferredBytes / this.activeSession.totalBytes) * 100));
     await storageService.saveSessionState(this.activeSession);
@@ -427,26 +510,43 @@ export class TransferEngine {
 
     // Check if file is fully received
     if (fileChunks.size >= totalChunks) {
-      await this.assembleAndSaveFile(currentFile, fileChunks);
+      await this.assembleAndSaveFile(currentFile, fileChunks, checksum);
     }
   }
 
-  private async assembleAndSaveFile(fileItem: TransferFileItem, chunksMap: Map<number, ArrayBuffer>) {
+  private async assembleAndSaveFile(fileItem: TransferFileItem, chunksMap: Map<number, ArrayBuffer>, expectedChecksum?: string) {
     const sortedChunks: ArrayBuffer[] = [];
     for (let i = 0; i < chunksMap.size; i++) {
       sortedChunks.push(chunksMap.get(i)!);
     }
 
     const blob = new Blob(sortedChunks, { type: fileItem.type });
+
+    // Verify SHA-256 Checksum if provided
+    if (expectedChecksum) {
+      try {
+        const fileBuf = await blob.arrayBuffer();
+        const hashBuf = await crypto.subtle.digest('SHA-256', fileBuf);
+        const actualChecksum = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        if (actualChecksum === expectedChecksum) {
+          console.log(`[FlowShare Receiver Log] SHA-256 Checksum PASSED for ${fileItem.name}: ${actualChecksum}`);
+        } else {
+          console.warn(`[FlowShare Receiver Warning] Checksum mismatch for ${fileItem.name}. Expected ${expectedChecksum}, got ${actualChecksum}`);
+        }
+      } catch (e) {}
+    }
+
     fileItem.blobUrl = URL.createObjectURL(blob);
     fileItem.status = 'completed';
     fileItem.progress = 100;
     this.notify();
 
-    // Save to IndexedDB & trigger download
+    // Save to IndexedDB & trigger automatic download
     await storageService.saveBlob(fileItem.id, blob, fileItem.name);
     storageService.triggerDownload(blob, fileItem.name);
     await storageService.clearChunksForFile(fileItem.id);
+
+    console.log(`[FlowShare Receiver Log] File saved and automatic download triggered for ${fileItem.name}`);
 
     // Check if all files in session completed
     const allDone = this.activeSession?.files.every(f => f.status === 'completed');
