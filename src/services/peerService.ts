@@ -23,11 +23,10 @@ class PeerService {
       return Promise.resolve(this.pairCode);
     }
 
-    // Generate a clean 4-digit numeric Pair Code
     const hash = Array.from(myDeviceId).reduce((acc, char) => acc + char.charCodeAt(0), 0);
     const numCode = ((hash * 9301 + 49297) % 8999 + 1000).toString();
     this.pairCode = `FLOW-${numCode}`;
-    this.peerId = `flow-${numCode.toLowerCase()}`;
+    this.peerId = myDeviceId.startsWith('flow-') ? myDeviceId : `flow-${myDeviceId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
     return new Promise((resolve) => {
       try {
@@ -37,12 +36,13 @@ class PeerService {
             iceServers: [
               { urls: 'stun:stun.l.google.com:19302' },
               { urls: 'stun:stun1.l.google.com:19302' },
+              { urls: 'stun:stun2.l.google.com:19302' },
             ],
           },
         });
 
         this.peer.on('open', (id) => {
-          console.log(`[PeerJS Cloud] Registered with ID: ${id}, Pair Code: ${this.pairCode}`);
+          console.log(`[PeerJS Cloud] Registered with ID: ${id}`);
           this.isInitialized = true;
           resolve(this.pairCode);
         });
@@ -72,30 +72,28 @@ class PeerService {
     return this.peerId;
   }
 
-  async connectToPeer(targetCode: string): Promise<boolean> {
+  async connectToPeer(targetId: string): Promise<boolean> {
     if (!this.peer || this.peer.destroyed) return false;
 
-    let cleanTargetId = targetCode.trim().toLowerCase();
-    if (!cleanTargetId.startsWith('flow-')) {
-      cleanTargetId = cleanTargetId.replace(/^flow-?/, '');
-      cleanTargetId = `flow-${cleanTargetId}`;
-    }
+    const cleanTargetId = targetId.startsWith('flow-') ? targetId : `flow-${targetId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
-    if (this.connections.has(cleanTargetId)) {
-      const existing = this.connections.get(cleanTargetId);
+    if (this.connections.has(cleanTargetId) || this.connections.has(targetId)) {
+      const existing = this.connections.get(cleanTargetId) || this.connections.get(targetId);
       if (existing && existing.open) return true;
     }
 
     try {
+      console.log(`[PeerJS Cloud] Connecting to peer ID: ${cleanTargetId}`);
       const conn = this.peer.connect(cleanTargetId, {
         reliable: true,
       });
 
       return new Promise((resolve) => {
-        const timeout = setTimeout(() => resolve(false), 8000);
+        const timeout = setTimeout(() => resolve(false), 5000);
 
         conn.on('open', () => {
           clearTimeout(timeout);
+          console.log(`[PeerJS Cloud] DataConnection OPEN with peer ${cleanTargetId}`);
           this.setupConnection(conn);
           resolve(true);
         });
@@ -114,10 +112,12 @@ class PeerService {
 
   private setupConnection(conn: DataConnection) {
     const peerId = conn.peer;
+    const rawId = peerId.replace(/^flow-/, '');
     this.connections.set(peerId, conn);
+    this.connections.set(rawId, conn);
 
     conn.on('data', (data: any) => {
-      const handlers = this.dataHandlers.get(peerId);
+      const handlers = this.dataHandlers.get(peerId) || this.dataHandlers.get(rawId);
       if (handlers) {
         handlers.forEach((h) => h(data));
       }
@@ -127,11 +127,11 @@ class PeerService {
           const msg = JSON.parse(data);
           if (msg.type === 'TRANSFER_REQUEST') {
             const peer: Device = {
-              id: peerId,
-              name: msg.payload?.senderName || `Peer (${peerId.toUpperCase()})`,
+              id: rawId,
+              name: msg.payload?.senderName || `Peer (${rawId})`,
               type: 'Desktop',
               os: 'Windows',
-              ip: 'Serverless P2P Cloud',
+              ip: 'P2P WebRTC Direct',
               signalStrength: 100,
               connectionQuality: 'Excellent',
               latency: 5,
@@ -145,6 +145,8 @@ class PeerService {
             } else {
               transferEngine.cancel();
             }
+          } else if (msg.type === 'TRANSFER_COMPLETE_ACK') {
+            transferEngine.handleTransferCompleteAck(msg.payload);
           }
         } catch (e) {}
       } else if (data instanceof ArrayBuffer) {
@@ -154,21 +156,18 @@ class PeerService {
 
     conn.on('close', () => {
       this.connections.delete(peerId);
+      this.connections.delete(rawId);
     });
 
     conn.on('error', () => {
       this.connections.delete(peerId);
+      this.connections.delete(rawId);
     });
   }
 
   sendData(targetPeerId: string, data: ArrayBuffer | string): boolean {
-    let cleanTargetId = targetPeerId.trim().toLowerCase();
-    if (!cleanTargetId.startsWith('flow-')) {
-      cleanTargetId = cleanTargetId.replace(/^flow-?/, '');
-      cleanTargetId = `flow-${cleanTargetId}`;
-    }
-
-    const conn = this.connections.get(cleanTargetId);
+    const cleanTargetId = targetPeerId.startsWith('flow-') ? targetPeerId : `flow-${targetPeerId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const conn = this.connections.get(targetPeerId) || this.connections.get(cleanTargetId);
     if (conn && conn.open) {
       conn.send(data);
       return true;

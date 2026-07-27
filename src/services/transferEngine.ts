@@ -268,6 +268,11 @@ export class TransferEngine {
         // Backpressure monitoring
         await webRTCService.waitForBufferDrain(peerId, 1024 * 1024);
 
+        // Pace packet transmission in micro-batches to prevent WSS/MQTT broker rate limiting
+        if (chunkIdx % 5 === 0 && chunkIdx > 0) {
+          await new Promise(r => setTimeout(r, 10));
+        }
+
         // Transmit packet via 3-tier pipeline (WebRTC -> PeerJS -> Cloud Relay)
         let sent = webRTCService.sendData(peerId, packet.buffer);
         if (!sent) {
@@ -301,7 +306,7 @@ export class TransferEngine {
 
         this.notify();
 
-        // Non-blocking ACK check (short 300ms check)
+        // Non-blocking ACK check
         this.waitForAck(this.activeSession.id, fileItem.id, chunkIdx, 300).catch(() => {});
         await new Promise(r => setTimeout(r, 0));
       }
@@ -313,18 +318,22 @@ export class TransferEngine {
       }
     }
 
-    if (!this.isCancelled && this.activeSession.status === 'transferring') {
+    // Keep session active at 99%/100% until receiver sends completion ACK
+    console.log('[FlowShare Transfer Log] All chunks dispatched. Awaiting Receiver Completion ACK...');
+  }
+
+  public handleTransferCompleteAck(payload: any) {
+    if (this.activeSession && this.activeSession.direction === 'send') {
+      console.log('[FlowShare Transfer Log] Receiver confirmed transfer completion!');
       this.activeSession.status = 'completed';
+      this.activeSession.overallProgress = 100;
       this.activeSession.endedAt = Date.now();
       this.notify();
       notificationService.playChime('success');
-
-      // Save to History & clear transient session state
       this.saveSessionToHistory('sent', 'Completed');
-      await storageService.clearSessionState(this.activeSession.id);
+      storageService.clearSessionState(this.activeSession.id);
+      this.stopSpeedMonitor();
     }
-
-    this.stopSpeedMonitor();
   }
 
   // --- Receiver Logic ---
@@ -576,6 +585,14 @@ export class TransferEngine {
       this.activeSession.endedAt = Date.now();
       this.notify();
       notificationService.playChime('success');
+
+      // Send completion ACK back to sender
+      const ackPayload = { sessionId: this.activeSession.id, fileId: fileItem.id };
+      const senderId = this.activeSession.peerDevice.id;
+      webSocketService.send('TRANSFER_COMPLETE_ACK', ackPayload, senderId);
+      cloudDiscoveryService.sendToPeer(senderId, 'TRANSFER_COMPLETE_ACK', ackPayload);
+      peerService.sendData(senderId, JSON.stringify({ type: 'TRANSFER_COMPLETE_ACK', payload: ackPayload }));
+
       this.saveSessionToHistory('received', 'Completed');
       await storageService.clearSessionState(this.activeSession.id);
       this.stopSpeedMonitor();
