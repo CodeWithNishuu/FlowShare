@@ -185,6 +185,8 @@ class CloudDiscoveryService {
       if (data?.command === 'PAUSE') transferEngine.pause();
       if (data?.command === 'RESUME') transferEngine.resume();
       if (data?.command === 'CANCEL') transferEngine.cancel();
+    } else if (type === 'TRANSFER_PROGRESS_UPDATE') {
+      transferEngine.handleProgressUpdate(data);
     } else if (type === 'FILE_CHUNK_PACKET') {
       const { meta, chunkBase64 } = data || {};
       if (meta && chunkBase64) {

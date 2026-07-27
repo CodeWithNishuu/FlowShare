@@ -268,37 +268,18 @@ export class TransferEngine {
         // Backpressure monitoring
         await webRTCService.waitForBufferDrain(peerId, 1024 * 1024);
 
-        // Transmit packet with ACK Retry logic
-        let chunkSent = false;
-        for (let retry = 0; retry < 3; retry++) {
-          if (this.isCancelled) break;
-
-          console.log(`[FlowShare Transfer Log] Sending Chunk ${chunkIdx + 1}/${totalChunks} (Attempt ${retry + 1})`);
-
-          let sent = webRTCService.sendData(peerId, packet.buffer);
-          if (!sent) {
-            sent = peerService.sendData(peerId, packet.buffer);
-          }
-          if (!sent) {
-            const chunkBase64 = this.arrayBufferToBase64(sendBuffer);
-            webSocketService.send('FALLBACK_FILE_CHUNK', { meta, chunkBase64 }, peerId);
-            cloudDiscoveryService.sendToPeer(peerId, 'FILE_CHUNK_PACKET', { meta, chunkBase64 });
-          }
-
-          // Wait for Chunk ACK
-          const acked = await this.waitForAck(this.activeSession.id, fileItem.id, chunkIdx, 2000);
-          if (acked) {
-            chunkSent = true;
-            break;
-          }
+        // Transmit packet via 3-tier pipeline (WebRTC -> PeerJS -> Cloud Relay)
+        let sent = webRTCService.sendData(peerId, packet.buffer);
+        if (!sent) {
+          sent = peerService.sendData(peerId, packet.buffer);
+        }
+        if (!sent) {
+          const chunkBase64 = this.arrayBufferToBase64(sendBuffer);
+          webSocketService.send('FALLBACK_FILE_CHUNK', { meta, chunkBase64 }, peerId);
+          cloudDiscoveryService.sendToPeer(peerId, 'FILE_CHUNK_PACKET', { meta, chunkBase64 });
         }
 
-        if (!chunkSent && !this.isCancelled) {
-          // Fast-forward optimistic completion if network channel is fast
-          console.log(`[FlowShare Transfer Log] Chunk ${chunkIdx + 1} sent. Fast-forwarding progress.`);
-        }
-
-        // Update progress
+        // Update progress immediately upon dispatch for 1:1 real-time sync with Receiver
         const chunkSize = end - start;
         fileItem.transferredBytes += chunkSize;
         fileItem.progress = Math.min(100, Math.round((fileItem.transferredBytes / fileItem.size) * 100));
@@ -306,7 +287,22 @@ export class TransferEngine {
         this.activeSession.transferredBytes += chunkSize;
         this.activeSession.overallProgress = Math.min(100, Math.round((this.activeSession.transferredBytes / this.activeSession.totalBytes) * 100));
 
+        // Sync progress update with receiver
+        const progressPayload = {
+          overallProgress: this.activeSession.overallProgress,
+          transferredBytes: this.activeSession.transferredBytes,
+          uploadSpeed: this.activeSession.uploadSpeed,
+          downloadSpeed: this.activeSession.uploadSpeed,
+          etaSeconds: this.activeSession.etaSeconds,
+          currentFileIndex: i,
+        };
+        webSocketService.send('TRANSFER_PROGRESS_UPDATE', progressPayload, peerId);
+        cloudDiscoveryService.sendToPeer(peerId, 'TRANSFER_PROGRESS_UPDATE', progressPayload);
+
         this.notify();
+
+        // Non-blocking ACK check (short 300ms check)
+        this.waitForAck(this.activeSession.id, fileItem.id, chunkIdx, 300).catch(() => {});
         await new Promise(r => setTimeout(r, 0));
       }
 
@@ -368,6 +364,31 @@ export class TransferEngine {
     this.notify();
     notificationService.playChime('request');
     return session;
+  }
+
+  public handleProgressUpdate(p: any) {
+    if (this.activeSession && p) {
+      if (p.overallProgress !== undefined) {
+        this.activeSession.overallProgress = p.overallProgress;
+      }
+      if (p.transferredBytes !== undefined) {
+        this.activeSession.transferredBytes = p.transferredBytes;
+      }
+      if (p.uploadSpeed !== undefined) {
+        if (this.activeSession.direction === 'receive') {
+          this.activeSession.downloadSpeed = p.uploadSpeed;
+        } else {
+          this.activeSession.uploadSpeed = p.uploadSpeed;
+        }
+      }
+      if (p.etaSeconds !== undefined) {
+        this.activeSession.etaSeconds = p.etaSeconds;
+      }
+      if (p.currentFileIndex !== undefined) {
+        this.activeSession.currentFileIndex = p.currentFileIndex;
+      }
+      this.notify();
+    }
   }
 
   async acceptTransfer(sessionId: string) {
