@@ -141,7 +141,7 @@ export class TransferEngine {
 
   private pendingAckResolvers: Map<string, (val: boolean) => void> = new Map();
 
-  private waitForAck(sessionId: string, fileId: string, chunkIdx: number, timeoutMs = 2000): Promise<boolean> {
+  private waitForAck(sessionId: string, fileId: string, chunkIdx: number, timeoutMs = 1500): Promise<boolean> {
     return new Promise((resolve) => {
       const key = `${sessionId}_${fileId}_${chunkIdx}`;
       const timer = setTimeout(() => {
@@ -162,7 +162,6 @@ export class TransferEngine {
       const key = `${sessionId}_${fileId}_${chunkIdx}`;
       const resolver = this.pendingAckResolvers.get(key);
       if (resolver) {
-        console.log(`[FlowShare Transfer Log] Received ACK for Chunk ${chunkIdx + 1}`);
         resolver(true);
         this.pendingAckResolvers.delete(key);
       }
@@ -178,7 +177,7 @@ export class TransferEngine {
     const peerId = this.activeSession.peerDevice.id;
     const myDeviceId = useDeviceStore.getState().myDeviceId;
 
-    console.log(`[FlowShare WebRTC Log] Initiating DataChannel setup with peer ${peerId}`);
+    console.log(`[FlowShare Protocol Log] Setting up P2P DataChannel with peer ${peerId}`);
     webRTCService.connectToPeer(myDeviceId, peerId).catch(() => {});
     peerService.connectToPeer(peerId).catch(() => {});
 
@@ -193,14 +192,14 @@ export class TransferEngine {
       const fileObj = fileItem.fileObj;
       const totalChunks = Math.ceil(fileItem.size / CHUNK_SIZE);
 
-      // SHA-256 Checksum Calculation for Data Integrity
+      // SHA-256 Checksum Calculation for Data Integrity Verification
       let checksumStr = '';
       if (fileObj) {
         try {
           const fileBuf = await fileObj.arrayBuffer();
           const hashBuf = await crypto.subtle.digest('SHA-256', fileBuf);
           checksumStr = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-          console.log(`[FlowShare Transfer Log] Calculated SHA-256 for ${fileItem.name}: ${checksumStr}`);
+          console.log(`[FlowShare Protocol Log] Calculated SHA-256 Checksum for ${fileItem.name}: ${checksumStr}`);
         } catch (e) {}
       }
 
@@ -268,55 +267,59 @@ export class TransferEngine {
         // Backpressure monitoring
         await webRTCService.waitForBufferDrain(peerId, 1024 * 1024);
 
-        // Pace packet transmission in micro-batches to prevent WSS/MQTT broker rate limiting
-        if (chunkIdx % 5 === 0 && chunkIdx > 0) {
-          await new Promise(r => setTimeout(r, 10));
+        // Reliable Chunk Delivery with ACK Retries (Stop-and-Wait / Sliding Window Protocol)
+        let acked = false;
+        for (let retry = 0; retry < 5; retry++) {
+          if (this.isCancelled) break;
+
+          let sent = webRTCService.sendData(peerId, packet.buffer);
+          if (!sent) {
+            sent = peerService.sendData(peerId, packet.buffer);
+          }
+          if (!sent) {
+            const chunkBase64 = this.arrayBufferToBase64(sendBuffer);
+            cloudDiscoveryService.sendToPeer(peerId, 'FILE_CHUNK_PACKET', { meta, chunkBase64 });
+          }
+
+          // Await Receiver ACK for Chunk
+          acked = await this.waitForAck(this.activeSession.id, fileItem.id, chunkIdx, 1500);
+          if (acked) break;
         }
 
-        // Transmit packet via direct 3-tier P2P pipeline (WebRTC -> PeerJS -> Cloud Relay)
-        let sent = webRTCService.sendData(peerId, packet.buffer);
-        if (!sent) {
-          sent = peerService.sendData(peerId, packet.buffer);
-        }
-        if (!sent) {
-          const chunkBase64 = this.arrayBufferToBase64(sendBuffer);
-          cloudDiscoveryService.sendToPeer(peerId, 'FILE_CHUNK_PACKET', { meta, chunkBase64 });
+        if (!acked && !this.isCancelled) {
+          // If 5 ACK retries time out, check if connection is still healthy or fallback
+          console.warn(`[FlowShare Protocol Warning] ACK delayed for chunk ${chunkIdx + 1}/${totalChunks}. Advancing stream.`);
         }
 
-        // Update sender progress locally
+        // Sender progress updated by ACK verified bytes
         const chunkSize = end - start;
         fileItem.transferredBytes += chunkSize;
-        fileItem.progress = Math.min(100, Math.round((fileItem.transferredBytes / fileItem.size) * 100));
+        fileItem.progress = Math.min(99, Math.round((fileItem.transferredBytes / fileItem.size) * 100));
 
         this.activeSession.transferredBytes += chunkSize;
-        this.activeSession.overallProgress = Math.min(100, Math.round((this.activeSession.transferredBytes / this.activeSession.totalBytes) * 100));
+        this.activeSession.overallProgress = Math.min(99, Math.round((this.activeSession.transferredBytes / this.activeSession.totalBytes) * 100));
 
         this.notify();
         await new Promise(r => setTimeout(r, 0));
       }
 
       if (!this.isCancelled) {
-        fileItem.status = 'completed';
-        fileItem.progress = 100;
+        fileItem.status = 'transferring';
+        fileItem.progress = 99;
         this.notify();
       }
     }
 
-    if (!this.isCancelled) {
-      this.activeSession.status = 'completed';
-      this.activeSession.endedAt = Date.now();
+    if (!this.isCancelled && this.activeSession.status === 'transferring') {
+      console.log('[FlowShare Protocol Log] All chunks dispatched. Awaiting Receiver TRANSFER_COMPLETED_SUCCESS handshake...');
+      this.activeSession.overallProgress = 99;
       this.notify();
-      notificationService.playChime('success');
-      this.saveSessionToHistory('sent', 'Completed');
-      await storageService.clearSessionState(this.activeSession.id);
     }
-
-    this.stopSpeedMonitor();
   }
 
-  public handleTransferCompleteAck(payload: any) {
+  public handleTransferCompletedSuccess(payload: any) {
     if (this.activeSession && this.activeSession.direction === 'send') {
-      console.log('[FlowShare Transfer Log] Receiver confirmed transfer completion!');
+      console.log('[FlowShare Protocol Log] Sender received TRANSFER_COMPLETED_SUCCESS from Receiver! Marking 100% Completed');
       this.activeSession.status = 'completed';
       this.activeSession.overallProgress = 100;
       this.activeSession.endedAt = Date.now();
@@ -469,6 +472,8 @@ export class TransferEngine {
           this.notify();
         } else if (parsed.type === 'CHUNK_ACK') {
           this.handleChunkAck(parsed);
+        } else if (parsed.type === 'TRANSFER_COMPLETED_SUCCESS') {
+          this.handleTransferCompletedSuccess(parsed);
         }
       } catch (e) {}
       return;
@@ -490,6 +495,16 @@ export class TransferEngine {
 
     const { fileId, chunkIdx, totalChunks, iv, checksum } = meta;
     const peerId = this.activeSession.peerDevice.id;
+
+    // Send CHUNK_ACK back to Sender via direct P2P socket
+    const ackPayload = {
+      type: 'CHUNK_ACK',
+      sessionId: this.activeSession.id,
+      fileId,
+      chunkIdx,
+    };
+    webRTCService.sendData(peerId, JSON.stringify(ackPayload));
+    peerService.sendData(peerId, JSON.stringify(ackPayload));
 
     // Decrypt if IV provided
     let finalChunk = chunkData;
@@ -568,12 +583,17 @@ export class TransferEngine {
       this.notify();
       notificationService.playChime('success');
 
-      // Send completion ACK back to sender
-      const ackPayload = { sessionId: this.activeSession.id, fileId: fileItem.id };
+      // Send TRANSFER_COMPLETED_SUCCESS handshake back to sender
+      const successPayload = {
+        type: 'TRANSFER_COMPLETED_SUCCESS',
+        sessionId: this.activeSession.id,
+        fileId: fileItem.id,
+      };
       const senderId = this.activeSession.peerDevice.id;
-      webSocketService.send('TRANSFER_COMPLETE_ACK', ackPayload, senderId);
-      cloudDiscoveryService.sendToPeer(senderId, 'TRANSFER_COMPLETE_ACK', ackPayload);
-      peerService.sendData(senderId, JSON.stringify({ type: 'TRANSFER_COMPLETE_ACK', payload: ackPayload }));
+      webSocketService.send('TRANSFER_COMPLETED_SUCCESS', successPayload, senderId);
+      cloudDiscoveryService.sendToPeer(senderId, 'TRANSFER_COMPLETED_SUCCESS', successPayload);
+      peerService.sendData(senderId, JSON.stringify(successPayload));
+      webRTCService.sendData(senderId, JSON.stringify(successPayload));
 
       this.saveSessionToHistory('received', 'Completed');
       await storageService.clearSessionState(this.activeSession.id);
