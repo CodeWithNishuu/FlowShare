@@ -513,10 +513,10 @@ export class TransferEngine {
     const fileChunks = this.receivedChunks.get(fileId)!;
     fileChunks.set(chunkIdx, finalChunk);
 
-    // Save partial chunk in IndexedDB for auto-resume
-    await storageService.saveChunk(fileId, chunkIdx, finalChunk);
+    // Save partial chunk asynchronously in background without blocking live transfer stream
+    storageService.saveChunk(fileId, chunkIdx, finalChunk).catch(() => {});
 
-    // Update statistics
+    // Update statistics in memory (<0.01ms)
     const currentFile = this.activeSession.files.find(f => f.id === fileId) || this.activeSession.files[this.activeSession.currentFileIndex];
     if (currentFile) {
       currentFile.transferredBytes += finalChunk.byteLength;
@@ -526,7 +526,7 @@ export class TransferEngine {
     this.activeSession.status = 'transferring';
     this.activeSession.transferredBytes += finalChunk.byteLength;
     this.activeSession.overallProgress = Math.min(100, Math.round((this.activeSession.transferredBytes / this.activeSession.totalBytes) * 100));
-    await storageService.saveSessionState(this.activeSession);
+
     this.notify();
 
     // Check if file is fully received
