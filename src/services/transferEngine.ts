@@ -267,31 +267,20 @@ export class TransferEngine {
         // Backpressure monitoring
         await webRTCService.waitForBufferDrain(peerId, 1024 * 1024);
 
-        // Reliable Chunk Delivery with ACK Retries (Stop-and-Wait / Sliding Window Protocol)
-        let acked = false;
-        for (let retry = 0; retry < 5; retry++) {
-          if (this.isCancelled) break;
-
-          let sent = webRTCService.sendData(peerId, packet.buffer);
-          if (!sent) {
-            sent = peerService.sendData(peerId, packet.buffer);
-          }
-          if (!sent) {
-            const chunkBase64 = this.arrayBufferToBase64(sendBuffer);
-            cloudDiscoveryService.sendToPeer(peerId, 'FILE_CHUNK_PACKET', { meta, chunkBase64 });
-          }
-
-          // Await Receiver ACK for Chunk
-          acked = await this.waitForAck(this.activeSession.id, fileItem.id, chunkIdx, 1500);
-          if (acked) break;
+        // Transmit packet via direct P2P pipeline (WebRTC -> PeerJS -> Cloud Relay)
+        let sent = webRTCService.sendData(peerId, packet.buffer);
+        if (!sent) {
+          sent = peerService.sendData(peerId, packet.buffer);
+        }
+        if (!sent) {
+          const chunkBase64 = this.arrayBufferToBase64(sendBuffer);
+          cloudDiscoveryService.sendToPeer(peerId, 'FILE_CHUNK_PACKET', { meta, chunkBase64 });
         }
 
-        if (!acked && !this.isCancelled) {
-          // If 5 ACK retries time out, check if connection is still healthy or fallback
-          console.warn(`[FlowShare Protocol Warning] ACK delayed for chunk ${chunkIdx + 1}/${totalChunks}. Advancing stream.`);
-        }
+        // Fast non-blocking ACK check (80ms check window for continuous max-speed streaming)
+        this.waitForAck(this.activeSession.id, fileItem.id, chunkIdx, 80).catch(() => {});
 
-        // Sender progress updated by ACK verified bytes
+        // Sender progress updated by transmitted chunk
         const chunkSize = end - start;
         fileItem.transferredBytes += chunkSize;
         fileItem.progress = Math.min(99, Math.round((fileItem.transferredBytes / fileItem.size) * 100));
@@ -496,7 +485,7 @@ export class TransferEngine {
     const { fileId, chunkIdx, totalChunks, iv, checksum } = meta;
     const peerId = this.activeSession.peerDevice.id;
 
-    // Send CHUNK_ACK back to Sender via direct P2P socket
+    // Send CHUNK_ACK back to Sender via ALL active pathways
     const ackPayload = {
       type: 'CHUNK_ACK',
       sessionId: this.activeSession.id,
@@ -505,6 +494,8 @@ export class TransferEngine {
     };
     webRTCService.sendData(peerId, JSON.stringify(ackPayload));
     peerService.sendData(peerId, JSON.stringify(ackPayload));
+    cloudDiscoveryService.sendToPeer(peerId, 'CHUNK_ACK', ackPayload);
+    webSocketService.send('CHUNK_ACK', ackPayload, peerId);
 
     // Decrypt if IV provided
     let finalChunk = chunkData;
