@@ -1,11 +1,12 @@
 import webSocketService from './webSocketService';
+import cloudDiscoveryService from './cloudDiscoveryService';
 import { useDeviceStore } from '../stores/deviceStore';
 import { Device } from '../types';
 
 /**
  * Discovery Service for FlowShare
- * Real-time active peer discovery via WebSockets, BroadcastChannel, and Local Peer Sync.
- * Enables automatic 1-click peer discovery without typing codes.
+ * Real-time active peer discovery via WebSockets, WSS Cloud Relay, and BroadcastChannel.
+ * Enables automatic 1-click peer discovery across physical devices (Phone & Laptop) without typing codes.
  */
 class DiscoveryService {
   private isScanning = false;
@@ -15,6 +16,9 @@ class DiscoveryService {
   startDiscovery(myDeviceId: string, myMetadata: Partial<Device>) {
     this.isScanning = true;
     webSocketService.connect(myDeviceId, myMetadata);
+
+    // Initialize WSS Cloud Discovery for cross-device signaling on Vercel (Phone & Laptop)
+    cloudDiscoveryService.init(myDeviceId, myMetadata);
 
     // Initialize cross-tab & local network BroadcastChannel
     try {
@@ -26,14 +30,12 @@ class DiscoveryService {
           const { type, device } = event.data || {};
           if (type === 'ANNOUNCE_DEVICE' && device && device.id !== myDeviceId) {
             useDeviceStore.getState().addOrUpdateDevice(device);
-            // Respond with my own device info
             this.sendAnnounce(myDeviceId, myMetadata);
           } else if (type === 'DEVICE_BYE' && device?.id) {
             useDeviceStore.getState().removeDevice(device.id);
           }
         };
 
-        // Broadcast presence
         this.sendAnnounce(myDeviceId, myMetadata);
 
         if (this.announceInterval) clearInterval(this.announceInterval);

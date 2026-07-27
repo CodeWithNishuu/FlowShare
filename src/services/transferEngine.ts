@@ -1,6 +1,7 @@
 import webRTCService from './webRTCService';
 import webSocketService from './webSocketService';
 import peerService from './peerService';
+import cloudDiscoveryService from './cloudDiscoveryService';
 import encryptionService from './encryptionService';
 import storageService from './storageService';
 import historyService from './historyService';
@@ -114,25 +115,24 @@ export class TransferEngine {
 
     const myDeviceName = useSettingsStore.getState().deviceName || 'FlowShare Peer';
 
-    // Send transfer request via WebSocket signaling & PeerJS fallback
-    const sentWs = webSocketService.send('TRANSFER_REQUEST', {
+    // Send transfer request via WebSocket signaling, MQTT Cloud Relay, & PeerJS fallback
+    const reqPayload = {
+      sessionId: session.id,
       files: files.map(f => ({ id: f.id, name: f.name, size: f.size, type: f.type })),
       senderName: myDeviceName,
       senderDevice: myDeviceName,
-    }, peerDevice.id);
+      totalBytes,
+      totalFiles: files.length,
+      estimatedTimeSec: Math.ceil(totalBytes / (15 * 1024 * 1024)),
+    };
+
+    const sentWs = webSocketService.send('TRANSFER_REQUEST', reqPayload, peerDevice.id);
+    cloudDiscoveryService.sendToPeer(peerDevice.id, 'TRANSFER_REQUEST', reqPayload);
 
     if (!sentWs) {
       peerService.sendData(peerDevice.id, JSON.stringify({
         type: 'TRANSFER_REQUEST',
-        payload: {
-          sessionId: session.id,
-          files: files.map(f => ({ id: f.id, name: f.name, size: f.size, type: f.type })),
-          senderName: myDeviceName,
-          senderDevice: myDeviceName,
-          totalBytes,
-          totalFiles: files.length,
-          estimatedTimeSec: Math.ceil(totalBytes / (15 * 1024 * 1024)),
-        }
+        payload: reqPayload,
       }));
     }
 

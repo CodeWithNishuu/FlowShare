@@ -17,6 +17,7 @@
     "express": "^4.21.0",
     "framer-motion": "^11.11.0",
     "lucide-react": "^0.453.0",
+    "mqtt": "^5.15.2",
     "peerjs": "^1.5.5",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
