@@ -18,6 +18,13 @@ class CloudDiscoveryService {
   private cleanupTimer: any = null;
   private isConnected = false;
 
+  private brokerIndex = 0;
+  private brokers = [
+    'wss://broker.emqx.io:8084/mqtt',
+    'wss://broker.hivemq.com:8000/mqtt',
+    'wss://test.mosquitto.org:8081',
+  ];
+
   init(myDeviceId: string, metadata: Partial<Device>) {
     this.myDeviceId = myDeviceId;
 
@@ -26,15 +33,15 @@ class CloudDiscoveryService {
       return;
     }
 
-    const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
+    const brokerUrl = this.brokers[this.brokerIndex % this.brokers.length];
 
     try {
       this.client = mqtt.connect(brokerUrl, {
-        clientId: `flow_${myDeviceId.slice(0, 16)}_${Math.random().toString(36).substring(2, 6)}`,
+        clientId: `flow_${myDeviceId.slice(0, 14)}_${Math.random().toString(36).substring(2, 6)}`,
         keepalive: 15,
         clean: true,
-        reconnectPeriod: 3000,
-        connectTimeout: 8000,
+        reconnectPeriod: 2000,
+        connectTimeout: 5000,
       });
 
       this.client.on('connect', () => {
@@ -103,7 +110,8 @@ class CloudDiscoveryService {
       });
 
       this.client.on('error', (err) => {
-        console.warn('[Cloud Discovery Warning]', err);
+        console.warn('[Cloud Discovery Broker Error]', err);
+        this.brokerIndex++;
       });
 
       this.client.on('offline', () => {

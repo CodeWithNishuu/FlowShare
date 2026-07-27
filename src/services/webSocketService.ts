@@ -44,8 +44,8 @@ export class WebSocketService {
       const port = '4000';
       this.serverUrl = `${protocol}//${host}:${port}`;
     } else {
-      // Public Secure WebSocket Relay for Vercel Cloud deployments
-      this.serverUrl = 'wss://free.websocket.in/v3/flowshare_p2p_channel?apiKey=public';
+      console.info('[FlowShare] Operating in Cloud P2P & MQTT WSS Relay mode.');
+      return Promise.resolve(false);
     }
 
     return new Promise((resolve) => {
