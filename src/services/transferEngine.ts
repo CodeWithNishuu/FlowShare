@@ -148,8 +148,9 @@ export class TransferEngine {
     const peerId = this.activeSession.peerDevice.id;
     const myDeviceId = useDeviceStore.getState().myDeviceId;
 
-    // Ensure direct WebRTC DataChannel connection is active
-    await webRTCService.ensureConnection(myDeviceId, peerId);
+    // Initiate WebRTC & PeerJS connection non-blockingly
+    webRTCService.connectToPeer(myDeviceId, peerId).catch(() => {});
+    peerService.connectToPeer(peerId).catch(() => {});
 
     for (let i = 0; i < this.activeSession.files.length; i++) {
       if (this.isCancelled) break;
@@ -177,7 +178,7 @@ export class TransferEngine {
 
       for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
         while (this.isPaused && !this.isCancelled) {
-          await new Promise(r => setTimeout(r, 200));
+          await new Promise(r => setTimeout(r, 100));
         }
         if (this.isCancelled) break;
 
@@ -189,7 +190,6 @@ export class TransferEngine {
           const slice = fileObj.slice(start, end);
           chunkBuffer = await slice.arrayBuffer();
         } else {
-          // Fallback dummy binary buffer if file reference is lost on refresh
           chunkBuffer = new ArrayBuffer(end - start);
         }
 
@@ -222,14 +222,15 @@ export class TransferEngine {
         packet.set(metaBytes, 4);
         packet.set(new Uint8Array(sendBuffer), 4 + metaLength);
 
-        // Transmit over WebRTC or WebSocket Fallback
+        // 3-Tier Instant Transmission: WebRTC -> PeerJS -> Cloud Relay
         let sent = webRTCService.sendData(peerId, packet.buffer);
         if (!sent) {
-          // Relay fallback via WS
-          webSocketService.send('FALLBACK_FILE_CHUNK', {
-            meta,
-            chunkBase64: this.arrayBufferToBase64(sendBuffer),
-          }, peerId);
+          sent = peerService.sendData(peerId, packet.buffer);
+        }
+        if (!sent) {
+          const chunkBase64 = this.arrayBufferToBase64(sendBuffer);
+          webSocketService.send('FALLBACK_FILE_CHUNK', { meta, chunkBase64 }, peerId);
+          cloudDiscoveryService.sendToPeer(peerId, 'FILE_CHUNK_PACKET', { meta, chunkBase64 });
         }
 
         // Update progress
@@ -241,7 +242,7 @@ export class TransferEngine {
         this.activeSession.overallProgress = Math.min(100, Math.round((this.activeSession.transferredBytes / this.activeSession.totalBytes) * 100));
 
         this.notify();
-        await new Promise(r => setTimeout(r, 2)); // Micro throttle for responsive UI updates
+        await new Promise(r => setTimeout(r, 0)); // Maximum throughput speed
       }
 
       if (!this.isCancelled) {
@@ -390,7 +391,7 @@ export class TransferEngine {
     await this.processChunkData(meta, chunkData);
   }
 
-  private async processChunkData(meta: any, chunkData: ArrayBuffer) {
+  public async processChunkData(meta: any, chunkData: ArrayBuffer) {
     if (!this.activeSession) return;
 
     const { fileId, chunkIdx, totalChunks, iv } = meta;

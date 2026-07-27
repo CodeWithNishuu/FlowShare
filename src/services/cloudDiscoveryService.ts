@@ -177,7 +177,23 @@ class CloudDiscoveryService {
       if (data?.command === 'PAUSE') transferEngine.pause();
       if (data?.command === 'RESUME') transferEngine.resume();
       if (data?.command === 'CANCEL') transferEngine.cancel();
+    } else if (type === 'FILE_CHUNK_PACKET') {
+      const { meta, chunkBase64 } = data || {};
+      if (meta && chunkBase64) {
+        const metaObj = typeof meta === 'string' ? JSON.parse(meta) : meta;
+        const chunkBuffer = this.base64ToArrayBuffer(chunkBase64);
+        transferEngine.processChunkData(metaObj, chunkBuffer);
+      }
     }
+  }
+
+  private base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
   }
 
   destroy() {
