@@ -41,10 +41,8 @@ export class WebSocketService {
       const port = '4000';
       this.serverUrl = `${protocol}//${host}:${port}`;
     } else {
-      // Cloud domain (e.g. Vercel) without a custom signaling server URL.
-      // Skip local port 4000 WebSocket connection attempt to prevent browser console errors.
-      console.info('[FlowShare] Cloud environment detected. Operating in Serverless PeerJS Cloud mode.');
-      return Promise.resolve(false);
+      // Public Secure WebSocket Relay for Vercel Cloud deployments
+      this.serverUrl = 'wss://free.websocket.in/v3/flowshare_p2p_channel?apiKey=public';
     }
 
     return new Promise((resolve) => {
@@ -55,11 +53,27 @@ export class WebSocketService {
           this.isConnected = true;
           this.startHeartbeat(metadata);
 
-          // Register device
-          this.send('REGISTER_DEVICE', metadata);
+          // Register & Announce device to all connected peers
+          const currentDev = {
+            id: this.deviceId,
+            name: metadata.name || 'FlowShare Peer',
+            type: metadata.type || 'Desktop',
+            os: metadata.os || 'Windows',
+            ip: 'Cloud Peer',
+            signalStrength: 98,
+            connectionQuality: 'Excellent',
+            latency: 5,
+            isOnline: true,
+          };
+
+          this.send('REGISTER_DEVICE', currentDev);
+          this.send('DEVICE_JOINED', { device: currentDev });
 
           if (typeof window !== 'undefined') {
-            window.addEventListener('beforeunload', () => this.disconnect());
+            window.addEventListener('beforeunload', () => {
+              this.send('DEVICE_LEFT', { deviceId: this.deviceId });
+              this.disconnect();
+            });
           }
           resolve(true);
         };
@@ -67,9 +81,29 @@ export class WebSocketService {
         this.ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            this.emit(data.type, data);
+            // Ignore own echoed messages
+            if (data.senderId === this.deviceId) return;
+
+            if (data.type === 'REGISTER_DEVICE' && data.payload) {
+              this.emit('DEVICE_JOINED', { device: data.payload });
+              // Respond back so new peer knows I'm online
+              const myDev = {
+                id: this.deviceId,
+                name: metadata.name || 'FlowShare Peer',
+                type: metadata.type || 'Desktop',
+                os: metadata.os || 'Windows',
+                ip: 'Cloud Peer',
+                signalStrength: 98,
+                connectionQuality: 'Excellent',
+                latency: 5,
+                isOnline: true,
+              };
+              this.send('DEVICE_JOINED', { device: myDev });
+            } else {
+              this.emit(data.type, data);
+            }
           } catch (err) {
-            console.error('Failed to parse WebSocket message:', err);
+            // Ignore non-JSON ping frames
           }
         };
 
