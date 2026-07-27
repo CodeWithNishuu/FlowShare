@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="50%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="iconGrad" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e0e7ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+  <path d="M352 160c0 26.51-21.49 48-48 48-10.74 0-20.67-3.54-28.71-9.53l-81.82 49.09c.35 2.78.53 5.61.53 8.44 0 2.83-.18 5.66-.53 8.44l81.82 49.09C283.33 307.54 293.26 304 304 304c26.51 0 48 21.49 48 48s-21.49 48-48 48-48-21.49-48-48c0-2.83.18-5.66.53-8.44l-81.82-49.09C166.67 301.54 156.74 305 146 305c-26.51 0-48-21.49-48-48s21.49-48 48-48c10.74 0 20.67 3.54 28.71 9.53l81.82-49.09c-.35-2.78-.53-5.61-.53-8.44 0-26.51 21.49-48 48-48s48 21.49 48 48z" fill="url(#iconGrad)" transform="translate(30, 20) scale(0.9)"/>
+</svg>
