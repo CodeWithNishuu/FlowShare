@@ -13,19 +13,8 @@ import {
 } from 'lucide-react';
 import { useNearbyDevices } from '../hooks/useNearbyDevices';
 import { Device } from '../types';
-
-import QRCode from 'qrcode';
-import peerService from '../services/peerService';
-import { useDeviceStore } from '../stores/deviceStore';
-import { useSettingsStore } from '../stores/settingsStore';
-import { detectBrowserAndOS } from '../utils/deviceInfo';
-import { QrCode, Link2, KeyRound } from 'lucide-react';
-
 export const NearbyDevices: React.FC = () => {
   const navigate = useNavigate();
-  const { myDeviceId } = useDeviceStore();
-  const { deviceName } = useSettingsStore();
-  const { os, deviceType } = detectBrowserAndOS();
 
   const {
     devices,
@@ -34,48 +23,6 @@ export const NearbyDevices: React.FC = () => {
     connectToDevice,
     refreshDiscovery,
   } = useNearbyDevices();
-
-  const [myPairCode, setMyPairCode] = React.useState<string>('');
-  const [qrDataUrl, setQrDataUrl] = React.useState<string>('');
-  const [targetPairCodeInput, setTargetPairCodeInput] = React.useState<string>('');
-  const [isPairConnecting, setIsPairConnecting] = React.useState<boolean>(false);
-
-  React.useEffect(() => {
-    peerService.init(myDeviceId, { name: deviceName, type: deviceType, os }).then((code) => {
-      setMyPairCode(code);
-      QRCode.toDataURL(window.location.origin + window.location.pathname + '#pair=' + code, {
-        margin: 1,
-        width: 140,
-        color: { dark: '#ffffff', light: '#111827' },
-      }).then(setQrDataUrl);
-    });
-  }, [myDeviceId, deviceName, deviceType, os]);
-
-  const handlePairCodeConnect = async () => {
-    if (!targetPairCodeInput.trim()) return;
-    setIsPairConnecting(true);
-    const cleanCode = targetPairCodeInput.trim().toUpperCase();
-    const success = await peerService.connectToPeer(cleanCode);
-    setIsPairConnecting(false);
-
-    const targetId = cleanCode.toLowerCase().startsWith('flow-')
-      ? cleanCode.toLowerCase()
-      : `flow-${cleanCode.toLowerCase().replace(/^flow-?/, '')}`;
-
-    const manualDevice: Device = {
-      id: targetId,
-      name: `Peer Device (${cleanCode})`,
-      type: 'Desktop',
-      os: 'Windows',
-      ip: 'Serverless P2P Cloud',
-      signalStrength: 100,
-      connectionQuality: 'Excellent',
-      latency: 5,
-      isOnline: true,
-    };
-    await connectToDevice(manualDevice);
-    navigate('/send');
-  };
 
   const getDeviceIcon = (type: string) => {
     if (type === 'Mobile') return <Smartphone className="w-7 h-7 text-cyan-400" />;
@@ -130,73 +77,12 @@ export const NearbyDevices: React.FC = () => {
         </div>
       </div>
 
-      {/* Serverless Pair Code & QR Quick Connect (100% Vercel / Zero Backend Friendly) */}
-      <div className="bg-gradient-to-r from-indigo-950/40 via-gray-900 to-cyan-950/40 p-4 sm:p-6 rounded-3xl border border-indigo-900/40 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-white flex items-center space-x-2">
-            <QrCode className="w-5 h-5 text-indigo-400" />
-            <span>Serverless Pair Code & QR Connect</span>
-          </h3>
-          <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-bold border border-indigo-500/30">
-            No Server Required
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-          {/* My Pair Code & QR */}
-          <div className="flex items-center space-x-4 bg-gray-800/50 p-4 rounded-2xl border border-gray-700/50">
-            {qrDataUrl ? (
-              <img src={qrDataUrl} alt="Pair QR Code" className="w-24 h-24 rounded-xl border border-gray-700 flex-shrink-0" />
-            ) : (
-              <div className="w-24 h-24 rounded-xl bg-gray-900 flex items-center justify-center text-gray-600 flex-shrink-0">
-                <QrCode className="w-8 h-8" />
-              </div>
-            )}
-            <div className="space-y-1 min-w-0">
-              <span className="text-xs text-gray-400">Your Pair Code (Scan or Type):</span>
-              <p className="text-xl sm:text-2xl font-black text-cyan-400 font-mono tracking-wider truncate">
-                {myPairCode || 'GENERATING...'}
-              </p>
-              <p className="text-[11px] text-gray-400 leading-tight">
-                Scan QR with Phone or enter Pair Code on another device to connect instantly via WebRTC P2P.
-              </p>
-            </div>
-          </div>
-
-          {/* Connect via Code Input */}
-          <div className="space-y-3 bg-gray-800/50 p-4 rounded-2xl border border-gray-700/50">
-            <label className="text-xs font-semibold text-gray-300 block flex items-center space-x-1.5">
-              <KeyRound className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Connect to Peer via Pair Code</span>
-            </label>
-            <div className="flex items-center space-x-2">
-              <input
-                type="text"
-                value={targetPairCodeInput}
-                onChange={(e) => setTargetPairCodeInput(e.target.value)}
-                placeholder="e.g. FLOW-8492"
-                className="flex-1 bg-gray-900 text-white px-4 py-2.5 rounded-xl text-sm border border-gray-700 font-mono focus:outline-none focus:border-indigo-500 uppercase"
-              />
-              <button
-                type="button"
-                onClick={handlePairCodeConnect}
-                disabled={isPairConnecting || !targetPairCodeInput.trim()}
-                className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-indigo-600/30 transition-all min-h-[42px]"
-              >
-                <Link2 className="w-4 h-4" />
-                <span>{isPairConnecting ? 'Connecting...' : 'Connect'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Device Grid */}
       {devices.length === 0 ? (
         <div className="bg-gray-900/60 backdrop-blur-md rounded-2xl border border-gray-800 p-6 sm:p-12 text-center space-y-3">
-          <p className="text-base font-bold text-white">No nearby devices discovered yet</p>
+          <p className="text-base font-bold text-white">Searching for nearby peer devices...</p>
           <p className="text-xs text-gray-400 max-w-md mx-auto">
-            Open FlowShare in another browser (e.g. Chrome, Edge) or on another device on the same Wi-Fi network to see them appear automatically in real time!
+            Open FlowShare in another browser tab, phone, or laptop on the same network to see them appear automatically in real time!
           </p>
         </div>
       ) : (
