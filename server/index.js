@@ -62,7 +62,12 @@ app.get('/api/devices', (req, res) => {
 // WebSocket Protocol Signaling
 wss.on('connection', (ws, req) => {
   let clientDeviceId = null;
-  const clientIp = req.socket.remoteAddress ? req.socket.remoteAddress.replace('::ffff:', '') : '127.0.0.1';
+  const rawIp = req.headers['x-forwarded-for']
+    ? req.headers['x-forwarded-for'].split(',')[0].trim()
+    : req.socket.remoteAddress
+    ? req.socket.remoteAddress.replace('::ffff:', '')
+    : '127.0.0.1';
+  const clientIp = rawIp;
 
   ws.on('message', (raw) => {
     try {

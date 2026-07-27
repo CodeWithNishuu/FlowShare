@@ -23,7 +23,10 @@ export class WebSocketService {
       return Promise.resolve(true);
     }
 
-    const customUrl = (useSettingsStore.getState() as any)?.signalingServerUrl || (import.meta.env.VITE_SIGNAL_SERVER_URL as string);
+    const customUrl =
+      (useSettingsStore.getState() as any)?.signalingServerUrl ||
+      (import.meta.env.VITE_SIGNALING_SERVER_URL as string) ||
+      (import.meta.env.VITE_SIGNAL_SERVER_URL as string);
     const host = typeof window !== 'undefined' ? window.location.hostname || 'localhost' : 'localhost';
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
 
