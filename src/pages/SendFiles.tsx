@@ -74,7 +74,7 @@ export const SendFiles: React.FC = () => {
               {devices.length === 0 ? (
                 <div className="p-4 rounded-xl bg-gray-800/40 border border-gray-700/50 text-center space-y-2">
                   <p className="text-xs text-gray-400">
-                    No nearby devices auto-detected. Open FlowShare on another device and enter its Pair Code below:
+                    No nearby devices detected. Go to <strong className="text-cyan-400">Nearby Devices</strong> page to discover peers or scan QR code.
                   </p>
                 </div>
               ) : (
@@ -110,37 +110,12 @@ export const SendFiles: React.FC = () => {
               )}
             </div>
 
-            {/* Manual Pair Code Option */}
-            <div className="pt-2 border-t border-gray-800/80">
-              <label className="text-[11px] font-semibold text-gray-400 block mb-1">
-                Or Send to Pair Code (Vercel Serverless):
-              </label>
-              <input
-                type="text"
-                placeholder="Enter Pair Code (e.g. FLOW-8492)"
-                onChange={(e) => {
-                  const val = e.target.value.trim().toUpperCase();
-                  if (val.length >= 4) {
-                    const targetId = val.toLowerCase().startsWith('flow-')
-                      ? val.toLowerCase()
-                      : `flow-${val.toLowerCase().replace(/^flow-?/, '')}`;
-                    const pairDevice: Device = {
-                      id: targetId,
-                      name: `Pair Device (${val})`,
-                      type: 'Desktop',
-                      os: 'Windows',
-                      ip: 'Serverless P2P Cloud',
-                      signalStrength: 100,
-                      connectionQuality: 'Excellent',
-                      latency: 5,
-                      isOnline: true,
-                    };
-                    setSelectedTargetDevice(pairDevice);
-                  }
-                }}
-                className="w-full bg-gray-800 text-white px-3 py-2 rounded-xl text-xs border border-gray-700 font-mono focus:outline-none uppercase"
-              />
-            </div>
+            {/* Step Helper Note */}
+            {selectedFiles.length === 0 && (
+              <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-800/40 text-xs text-indigo-300">
+                👈 <strong>Step 1:</strong> Click <strong>"Browse Files"</strong> on the left to pick files first.
+              </div>
+            )}
 
             {/* Security Note */}
             <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-800/40 text-xs text-emerald-400 flex items-center space-x-2">
@@ -158,6 +133,8 @@ export const SendFiles: React.FC = () => {
               <span>
                 {isSending
                   ? 'Initiating Session...'
+                  : selectedFiles.length === 0
+                  ? '👈 First Pick Files to Send'
                   : `Send ${selectedFiles.length} File${selectedFiles.length !== 1 ? 's' : ''}`}
               </span>
             </button>
