@@ -273,18 +273,17 @@ export class TransferEngine {
           await new Promise(r => setTimeout(r, 10));
         }
 
-        // Transmit packet via 3-tier pipeline (WebRTC -> PeerJS -> Cloud Relay)
+        // Transmit packet via direct 3-tier P2P pipeline (WebRTC -> PeerJS -> Cloud Relay)
         let sent = webRTCService.sendData(peerId, packet.buffer);
         if (!sent) {
           sent = peerService.sendData(peerId, packet.buffer);
         }
         if (!sent) {
           const chunkBase64 = this.arrayBufferToBase64(sendBuffer);
-          webSocketService.send('FALLBACK_FILE_CHUNK', { meta, chunkBase64 }, peerId);
           cloudDiscoveryService.sendToPeer(peerId, 'FILE_CHUNK_PACKET', { meta, chunkBase64 });
         }
 
-        // Update progress immediately upon dispatch for 1:1 real-time sync with Receiver
+        // Update sender progress locally
         const chunkSize = end - start;
         fileItem.transferredBytes += chunkSize;
         fileItem.progress = Math.min(100, Math.round((fileItem.transferredBytes / fileItem.size) * 100));
@@ -292,22 +291,7 @@ export class TransferEngine {
         this.activeSession.transferredBytes += chunkSize;
         this.activeSession.overallProgress = Math.min(100, Math.round((this.activeSession.transferredBytes / this.activeSession.totalBytes) * 100));
 
-        // Sync progress update with receiver
-        const progressPayload = {
-          overallProgress: this.activeSession.overallProgress,
-          transferredBytes: this.activeSession.transferredBytes,
-          uploadSpeed: this.activeSession.uploadSpeed,
-          downloadSpeed: this.activeSession.uploadSpeed,
-          etaSeconds: this.activeSession.etaSeconds,
-          currentFileIndex: i,
-        };
-        webSocketService.send('TRANSFER_PROGRESS_UPDATE', progressPayload, peerId);
-        cloudDiscoveryService.sendToPeer(peerId, 'TRANSFER_PROGRESS_UPDATE', progressPayload);
-
         this.notify();
-
-        // Non-blocking ACK check
-        this.waitForAck(this.activeSession.id, fileItem.id, chunkIdx, 300).catch(() => {});
         await new Promise(r => setTimeout(r, 0));
       }
 
@@ -318,8 +302,16 @@ export class TransferEngine {
       }
     }
 
-    // Keep session active at 99%/100% until receiver sends completion ACK
-    console.log('[FlowShare Transfer Log] All chunks dispatched. Awaiting Receiver Completion ACK...');
+    if (!this.isCancelled) {
+      this.activeSession.status = 'completed';
+      this.activeSession.endedAt = Date.now();
+      this.notify();
+      notificationService.playChime('success');
+      this.saveSessionToHistory('sent', 'Completed');
+      await storageService.clearSessionState(this.activeSession.id);
+    }
+
+    this.stopSpeedMonitor();
   }
 
   public handleTransferCompleteAck(payload: any) {
@@ -498,16 +490,6 @@ export class TransferEngine {
 
     const { fileId, chunkIdx, totalChunks, iv, checksum } = meta;
     const peerId = this.activeSession.peerDevice.id;
-
-    // Send CHUNK_ACK back to Sender immediately
-    const ackPayload = {
-      type: 'CHUNK_ACK',
-      sessionId: this.activeSession.id,
-      fileId,
-      chunkIdx,
-    };
-    cloudDiscoveryService.sendToPeer(peerId, 'CHUNK_ACK', ackPayload);
-    webRTCService.sendData(peerId, JSON.stringify(ackPayload));
 
     // Decrypt if IV provided
     let finalChunk = chunkData;
